@@ -530,3 +530,146 @@ def test_return_n_best_forecasters(Forecaster, return_n_best_forecasters, kwargs
             )
             total_combinations = calculate_total_combinations(kwargs[key])
             assert len(searchCV.n_best_forecasters_) == total_combinations
+
+
+@pytest.mark.skipif(
+    not _check_soft_dependencies("dask", severity="none"),
+    reason="run test only if dask is present",
+)
+@pytest.mark.skipif(
+    not run_test_for_class(ForecastingGridSearchCV),
+    reason="run test only if softdeps are present and incrementally (if requested)",
+)
+def test_materialize_dask_lazy_default():
+    """Test that materialize_dask_lazy=True (default) works as before."""
+    y = load_airline()
+    forecaster = NaiveForecaster()
+    param_grid = {"strategy": ["last", "mean"]}
+    cv = SingleWindowSplitter(fh=1)
+
+    gscv = ForecastingGridSearchCV(
+        forecaster=forecaster,
+        param_grid=param_grid,
+        cv=cv,
+        backend="dask_lazy",
+        materialize_dask_lazy=True,
+    )
+    gscv.fit(y)
+
+    # Should have cv_results_ but not cv_results_lazy_
+    assert hasattr(gscv, "cv_results_")
+    assert not hasattr(gscv, "cv_results_lazy_")
+    assert gscv.best_params_ is not None
+
+
+@pytest.mark.skipif(
+    not _check_soft_dependencies("dask", severity="none"),
+    reason="run test only if dask is present",
+)
+@pytest.mark.skipif(
+    not run_test_for_class(ForecastingGridSearchCV),
+    reason="run test only if softdeps are present and incrementally (if requested)",
+)
+def test_materialize_dask_lazy_false():
+    """Test that materialize_dask_lazy=False stores lazy objects."""
+    y = load_airline()
+    forecaster = NaiveForecaster()
+    param_grid = {"strategy": ["last", "mean"]}
+    cv = SingleWindowSplitter(fh=1)
+
+    gscv = ForecastingGridSearchCV(
+        forecaster=forecaster,
+        param_grid=param_grid,
+        cv=cv,
+        backend="dask_lazy",
+        materialize_dask_lazy=False,
+    )
+    gscv.fit(y)
+
+    # Should have both cv_results_ and cv_results_lazy_
+    assert hasattr(gscv, "cv_results_")
+    assert hasattr(gscv, "cv_results_lazy_")
+    # cv_results_lazy_ should contain dask delayed objects
+    from dask.delayed import Delayed
+
+    assert len(gscv.cv_results_lazy_) > 0
+    assert all(isinstance(x, Delayed) for x in gscv.cv_results_lazy_)
+    assert gscv.best_params_ is not None
+
+
+@pytest.mark.skipif(
+    not _check_soft_dependencies("dask", severity="none"),
+    reason="run test only if dask is present",
+)
+@pytest.mark.skipif(
+    not run_test_for_class(ForecastingGridSearchCV),
+    reason="run test only if softdeps are present and incrementally (if requested)",
+)
+def test_materialize_dask_lazy_same_results():
+    """Test that both materialize_dask_lazy modes produce same results."""
+    y = load_airline()
+    forecaster = NaiveForecaster()
+    param_grid = {"strategy": ["last", "mean"]}
+    cv = SingleWindowSplitter(fh=1)
+
+    gscv1 = ForecastingGridSearchCV(
+        forecaster=forecaster.clone(),
+        param_grid=param_grid,
+        cv=cv,
+        backend="dask_lazy",
+        materialize_dask_lazy=True,
+    )
+    gscv1.fit(y)
+
+    gscv2 = ForecastingGridSearchCV(
+        forecaster=forecaster.clone(),
+        param_grid=param_grid,
+        cv=cv,
+        backend="dask_lazy",
+        materialize_dask_lazy=False,
+    )
+    gscv2.fit(y)
+
+    # Both should have same best params and scores
+    assert gscv1.best_params_ == gscv2.best_params_
+    assert gscv1.best_score_ == gscv2.best_score_
+    # cv_results should be the same (compare scores and params, exclude timing)
+    import pandas as pd
+
+    # Compare only non-timing columns
+    score_cols = [col for col in gscv1.cv_results_.columns if "mean_test" in col or col == "params"]
+    pd.testing.assert_frame_equal(
+        gscv1.cv_results_[score_cols].reset_index(drop=True),
+        gscv2.cv_results_[score_cols].reset_index(drop=True),
+        check_exact=False,
+    )
+
+
+@pytest.mark.skipif(
+    not _check_soft_dependencies("dask", severity="none"),
+    reason="run test only if dask is present",
+)
+@pytest.mark.skipif(
+    not run_test_for_class(ForecastingGridSearchCV),
+    reason="run test only if softdeps are present and incrementally (if requested)",
+)
+def test_materialize_dask_lazy_only_with_dask_lazy_backend():
+    """Test that materialize_dask_lazy only has effect with backend='dask_lazy'."""
+    y = load_airline()
+    forecaster = NaiveForecaster()
+    param_grid = {"strategy": ["last", "mean"]}
+    cv = SingleWindowSplitter(fh=1)
+
+    # With backend="dask" (not "dask_lazy"), materialize_dask_lazy should be ignored
+    gscv = ForecastingGridSearchCV(
+        forecaster=forecaster,
+        param_grid=param_grid,
+        cv=cv,
+        backend="dask",
+        materialize_dask_lazy=False,
+    )
+    gscv.fit(y)
+
+    # Should not have cv_results_lazy_ since backend is not "dask_lazy"
+    assert hasattr(gscv, "cv_results_")
+    assert not hasattr(gscv, "cv_results_lazy_")
