@@ -638,10 +638,37 @@ def test_materialize_dask_lazy_same_results():
 
     # Compare only non-timing columns
     score_cols = [col for col in gscv1.cv_results_.columns if "mean_test" in col or col == "params"]
+    left = gscv1.cv_results_[score_cols].reset_index(drop=True)
+    right = gscv2.cv_results_[score_cols].reset_index(drop=True)
+
+    # Make deterministic: sort columns alphabetically
+    left = left.sort_index(axis=1)
+    right = right.sort_index(axis=1)
+
+    # Sort rows by params for deterministic ordering
+    if "params" in left.columns:
+        left["params_str"] = left["params"].astype(str)
+        right["params_str"] = right["params"].astype(str)
+        sort_by = ["params_str"]
+    else:
+        # fallback: sort by all columns (stable)
+        sort_by = list(left.columns)
+
+    left = left.sort_values(by=sort_by, ignore_index=True)
+    right = right.sort_values(by=sort_by, ignore_index=True)
+
+    # Remove helper column if created
+    if "params_str" in left.columns:
+        left = left.drop(columns=["params_str"])
+        right = right.drop(columns=["params_str"])
+
+    # Allow small float differences and ignore column order differences
     pd.testing.assert_frame_equal(
-        gscv1.cv_results_[score_cols].reset_index(drop=True),
-        gscv2.cv_results_[score_cols].reset_index(drop=True),
-        check_exact=False,
+        left,
+        right,
+        check_like=True,  # tolerates different column order if any remain
+        rtol=1e-7,
+        atol=1e-8,
     )
 
 
