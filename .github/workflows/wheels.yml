@@ -75,7 +75,16 @@ jobs:
       - name: Ensure workspace exists (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: New-Item -ItemType Directory -Force -Path $env:GITHUB_WORKSPACE
+        run: |
+          # GITHUB_WORKSPACE is set by GitHub Actions, ensure parent directories exist
+          if ($env:GITHUB_WORKSPACE) {
+            $workspace = $env:GITHUB_WORKSPACE
+            $parent = Split-Path -Parent $workspace
+            if ($parent -and -not (Test-Path $parent)) {
+              New-Item -ItemType Directory -Force -Path $parent | Out-Null
+            }
+            New-Item -ItemType Directory -Force -Path $workspace | Out-Null
+          }
 
       - uses: actions/checkout@v6
         with:
