@@ -51,8 +51,15 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.operating-system }}
     steps:
+      - name: Ensure workspace exists (Windows)
+        if: matrix.operating-system == 'windows-latest'
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path $env:GITHUB_WORKSPACE
+
       - name: checkout pull request branch
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: update local git tracking reference
         run: git remote set-branches origin main

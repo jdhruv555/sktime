@@ -212,6 +212,11 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - name: Ensure workspace exists (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path $env:GITHUB_WORKSPACE
+
       - name: Checkout code
         uses: actions/checkout@v6
 
