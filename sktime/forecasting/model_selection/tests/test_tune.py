@@ -635,7 +635,6 @@ def test_materialize_dask_lazy_same_results():
     assert gscv1.best_score_ == gscv2.best_score_
     # cv_results should be the same (compare scores and params, exclude timing)
     import pandas as pd
-    import numpy as np
 
     # Compare only non-timing columns (scores and params)
     score_cols = [
