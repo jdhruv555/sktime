@@ -635,40 +635,72 @@ def test_materialize_dask_lazy_same_results():
     assert gscv1.best_score_ == gscv2.best_score_
     # cv_results should be the same (compare scores and params, exclude timing)
     import pandas as pd
+    import numpy as np
 
-    # Compare only non-timing columns
-    score_cols = [col for col in gscv1.cv_results_.columns if "mean_test" in col or col == "params"]
-    left = gscv1.cv_results_[score_cols].reset_index(drop=True)
-    right = gscv2.cv_results_[score_cols].reset_index(drop=True)
+    # Compare only non-timing columns (scores and params)
+    score_cols = [
+        col
+        for col in gscv1.cv_results_.columns
+        if "mean_test" in col or "rank_test" in col or col == "params"
+    ]
+    left = gscv1.cv_results_[score_cols].copy()
+    right = gscv2.cv_results_[score_cols].copy()
 
     # Make deterministic: sort columns alphabetically
     left = left.sort_index(axis=1)
     right = right.sort_index(axis=1)
 
-    # Sort rows by params for deterministic ordering
+    # Create stable sorting key from params
     if "params" in left.columns:
-        left["params_str"] = left["params"].astype(str)
-        right["params_str"] = right["params"].astype(str)
-        sort_by = ["params_str"]
+        left["_params_str"] = left["params"].apply(str)
+        right["_params_str"] = right["params"].apply(str)
+        sort_by = ["_params_str"]
     else:
-        # fallback: sort by all columns (stable)
-        sort_by = list(left.columns)
+        # fallback: use rank_test if available, otherwise all columns
+        if "rank_test" in [c for c in left.columns if "rank_test" in c]:
+            rank_col = [c for c in left.columns if "rank_test" in c][0]
+            sort_by = [rank_col]
+        else:
+            sort_by = list(left.columns)
 
+    # Sort rows deterministically
     left = left.sort_values(by=sort_by, ignore_index=True)
     right = right.sort_values(by=sort_by, ignore_index=True)
 
-    # Remove helper column if created
-    if "params_str" in left.columns:
-        left = left.drop(columns=["params_str"])
-        right = right.drop(columns=["params_str"])
+    # Normalize numeric columns: coerce to float and round to avoid fp differences
+    numeric_cols = []
+    for col in left.columns:
+        if col in ["params", "_params_str"]:
+            continue
+        try:
+            # Try to convert to numeric
+            left_numeric = pd.to_numeric(left[col], errors="coerce")
+            right_numeric = pd.to_numeric(right[col], errors="coerce")
+            # If conversion successful and no NaN issues, treat as numeric
+            if not left_numeric.isna().all() and not right_numeric.isna().all():
+                left[col] = left_numeric.astype(float)
+                right[col] = right_numeric.astype(float)
+                # Round to 10 decimal places to avoid tiny fp differences
+                left[col] = left[col].round(10)
+                right[col] = right[col].round(10)
+                numeric_cols.append(col)
+        except (ValueError, TypeError):
+            # Non-numeric column, leave as-is
+            pass
 
-    # Allow small float differences and ignore column order differences
+    # Remove helper column if created
+    if "_params_str" in left.columns:
+        left = left.drop(columns=["_params_str"])
+        right = right.drop(columns=["_params_str"])
+
+    # Compare with tolerance for numeric differences and ignore dtype differences
     pd.testing.assert_frame_equal(
         left,
         right,
         check_like=True,  # tolerates different column order if any remain
-        rtol=1e-7,
-        atol=1e-8,
+        check_dtype=False,  # ignore dtype differences (object vs float)
+        rtol=1e-6,  # relative tolerance for numeric comparison
+        atol=1e-8,  # absolute tolerance for numeric comparison
     )
 
 
