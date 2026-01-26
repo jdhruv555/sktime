@@ -359,12 +359,19 @@ def optuna_samplers():
     else:
         import optuna
 
-        return [
+        samplers = [
             None,
             optuna.samplers.NSGAIISampler(seed=42),
             optuna.samplers.QMCSampler(seed=42),
-            optuna.samplers.CmaEsSampler(seed=42),
         ]
+        # CmaEsSampler requires cmaes package, skip if not available
+        try:
+            samplers.append(optuna.samplers.CmaEsSampler(seed=42))
+        except (ModuleNotFoundError, ImportError):
+            # cmaes not installed, skip CmaEsSampler
+            pass
+
+        return samplers
 
 
 forecasters_optuna_test = {
